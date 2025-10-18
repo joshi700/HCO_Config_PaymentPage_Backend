@@ -9,7 +9,7 @@ const port = process.env.PORT || 3005;
 
 // Define allowed origins
 const allowedOrigins = [
-  'https://hco-configurable-embedded.vercel.app',
+  'https://hco-config-payment-page-front-end.vercel.app',
   'http://localhost:3000',
   'http://localhost:3001'
 ];
@@ -106,7 +106,7 @@ app.post('/', async (req, res) => {
         currency = process.env.CURRENCY || "USD",
         amount = process.env.DEFAULT_AMOUNT || "99.00",
         description = process.env.ORDER_DESCRIPTION || "Goods and Services",
-        returnUrl = process.env.RETURN_URL || "https://hco-configurable-embedded.vercel.app/ReceiptPage"
+        returnUrl = process.env.RETURN_URL || "https://hco-config-payment-page-front-end.vercel.app/ReceiptPage"
       } = req.body;
 
       console.log('Using simple mode configuration:', {
