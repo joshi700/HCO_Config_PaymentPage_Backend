@@ -170,11 +170,15 @@ app.post('/', async (req, res) => {
     console.log("Full response:", JSON.stringify(response.data, null, 2));
     
     const sessionId = response.data.session.id;
+    
+    // Extract amount for response (FIX DEFECT 2)
+    const amount = postData.order?.amount || '99.00';
 
     // Return proper JSON response
     res.json({ 
       sessionId: sessionId,
       orderId: orderid,
+      amount: amount,
       status: 'success',
       mode: req.body.apiOperation ? 'advanced' : 'simple'
     });
