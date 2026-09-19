@@ -6,16 +6,41 @@ const webhookStore = require('../services/webhookStore');
 
 const router = express.Router();
 
+// Passwords live server-side only; the frontend's merchant profiles carry just
+// the merchant id. Each merchant's password is read from
+// GATEWAY_PASSWORD_<MERCHANT ID> (e.g. GATEWAY_PASSWORD_GJMIDTESTING), and the
+// default merchant also falls back to API_PASSWORD.
+function serverPasswordFor(merchantId) {
+  const perMerchant = process.env[`GATEWAY_PASSWORD_${String(merchantId || '').toUpperCase()}`];
+  const fallback = merchantId === config.merchantId ? config.apiPassword : '';
+  return perMerchant || fallback || undefined;
+}
+
+// Contact details the hosted page shows as a merchant footer, and sample payer
+// data for the read-only customer, billing and shipping boxes. Plain ASCII
+// only: the hosted UI mis-renders some non-ASCII characters.
+const MERCHANT_CONTACT = {
+  email: 'support@example.com',
+  phone: '+1 555 010 0199',
+  address: { line1: '100 Example Street', line2: 'Suite 400', line3: 'St Louis, MO 63102', line4: 'United States' },
+};
+const SAMPLE_CUSTOMER = { firstName: 'Sample', lastName: 'Payer', email: 'sample.payer@example.com', mobilePhone: '+1 5557891238' };
+const SAMPLE_ADDRESS = {
+  street: '11 N 4th St', street2: 'Apt 2B', city: 'St Louis', stateProvince: 'MO', postcodeZip: '63102', country: 'USA',
+};
+
 router.post('/', async (req, res) => {
   try {
-    console.log('Received checkout request:', JSON.stringify(req.body, null, 2));
+    // The request body is not logged: it can carry a typed-in password.
 
-    // Extract credentials from request body (with env var fallbacks)
-    const merchantId = req.body.merchantId || config.merchantId;
-    const username = req.body.username || config.apiUsername;
-    const password = req.body.password || config.apiPassword;
-    const apiBaseUrl = req.body.apiBaseUrl || config.gatewayUrl;
-    const apiVersion = req.body.apiVersion || config.apiVersion;
+    // Empty strings count as missing. A password typed into the Custom profile
+    // wins; otherwise the server supplies the one for that merchant.
+    const given = (v) => (typeof v === 'string' ? v.trim() : v) || undefined;
+    const merchantId = given(req.body.merchantId) || config.merchantId;
+    const username = given(req.body.username) || config.apiUsername;
+    const password = given(req.body.password) || serverPasswordFor(merchantId);
+    const apiBaseUrl = given(req.body.apiBaseUrl) || config.gatewayUrl;
+    const apiVersion = given(req.body.apiVersion) || config.apiVersion;
 
     if (!merchantId || !username || !password) {
       return res.status(400).json({
@@ -40,6 +65,11 @@ router.post('/', async (req, res) => {
         interaction: req.body.interaction,
         order: req.body.order,
       };
+      // The payer objects render as the shipping, customer and billing boxes.
+      // They were previously dropped here without any error.
+      for (const key of ['customer', 'billing', 'shipping']) {
+        if (req.body[key]) postData[key] = req.body[key];
+      }
       orderid = req.body.order.id;
     } else {
       // Simple mode
@@ -48,7 +78,7 @@ router.post('/', async (req, res) => {
 
       const {
         merchantName = 'GJ Enterprises LLC',
-        merchantUrl = 'https://microsoft.com/',
+        merchantUrl = 'https://www.example.com',
         currency = 'USD',
         amount,
         description = 'Goods and Services',
@@ -69,16 +99,23 @@ router.post('/', async (req, res) => {
         checkoutMode: req.body.checkoutMode || 'WEBSITE',
         interaction: {
           operation: 'PURCHASE',
-          displayControl: { billingAddress: 'HIDE' },
-          merchant: { name: merchantName, url: merchantUrl },
+          displayControl: { billingAddress: 'READ_ONLY', customerEmail: 'READ_ONLY', shipping: 'READ_ONLY' },
+          merchant: { ...MERCHANT_CONTACT, name: merchantName, url: merchantUrl },
+          locale: 'en_US',
           returnUrl: effectiveReturnUrl,
         },
         order: {
           currency,
           amount,
           id: orderid,
-          description,
+          description: `Order ${orderid} - ${description}`,
+          itemAmount: amount,
+          taxAmount: '0.00',
+          item: [{ name: description, quantity: 1, unitPrice: amount }],
         },
+        customer: SAMPLE_CUSTOMER,
+        billing: { address: SAMPLE_ADDRESS },
+        shipping: { contact: { firstName: SAMPLE_CUSTOMER.firstName, lastName: SAMPLE_CUSTOMER.lastName }, address: SAMPLE_ADDRESS },
       };
     }
 
@@ -124,6 +161,9 @@ router.post('/', async (req, res) => {
     res.json({
       sessionId,
       orderId: orderid,
+      // Lets the page draw an order summary in embedded mode, where Mastercard
+      // renders only the payment form.
+      order: postData.order,
       amount: postData.order.amount,
       status: 'success',
       mode: req.body.apiOperation ? 'advanced' : 'simple',
