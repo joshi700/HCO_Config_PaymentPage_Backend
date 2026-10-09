@@ -8,7 +8,9 @@ const router = express.Router();
 
 router.post('/', async (req, res) => {
   try {
-    console.log('Received checkout request:', JSON.stringify(req.body, null, 2));
+    // Log the request without the API password so it never reaches the server logs.
+    const { password: _omit, ...loggable } = req.body || {};
+    console.log('Received checkout request:', JSON.stringify(loggable, null, 2));
 
     // Extract credentials from request body (with env var fallbacks)
     const merchantId = req.body.merchantId || config.merchantId;
